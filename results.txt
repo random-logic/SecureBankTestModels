@@ -1,0 +1,42 @@
+--- Logistic Regression performance ---
+ROC AUC: 0.8303003285578324
+Precision: 0.018484769591252278
+Recall: 0.7652040030792918
+F1: 0.03609754326076299
+Classification report:
+               precision    recall  f1-score   support
+
+           0       1.00      0.82      0.90    295276
+           1       0.02      0.77      0.04      1299
+
+    accuracy                           0.82    296575
+   macro avg       0.51      0.79      0.47    296575
+weighted avg       0.99      0.82      0.90    296575
+
+Confusion matrix:
+ [[242496  52780]
+ [   305    994]]
+
+Training Random Forest...
+
+--- Random Forest performance ---
+ROC AUC: 0.9854849675434726
+Precision: 0.9615384615384616
+Recall: 0.5581216320246344
+F1: 0.7062834875791525
+Classification report:
+               precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00    295276
+           1       0.96      0.56      0.71      1299
+
+    accuracy                           1.00    296575
+   macro avg       0.98      0.78      0.85    296575
+weighted avg       1.00      1.00      1.00    296575
+
+Confusion matrix:
+ [[295247     29]
+ [   574    725]]
+
+Saved models: fraud_pipe_logreg.joblib, fraud_pipe_rf.joblib
+Could not compute feature importances: 'onehot'
