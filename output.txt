@@ -1,0 +1,74 @@
+=== Switching to LightGBM model ===
+Training LightGBM model...
+Applied probability threshold: 0.3
+
+--- LightGBM performance ---
+ROC AUC: 0.9950202876955526
+Precision: 0.21030116358658454
+Recall: 0.9461123941493457
+F1: 0.34411311773764525
+Classification report:
+              precision    recall  f1-score   support
+
+           0       1.00      0.98      0.99    295276
+           1       0.21      0.95      0.34      1299
+
+    accuracy                           0.98    296575
+   macro avg       0.61      0.97      0.67    296575
+weighted avg       1.00      0.98      0.99    296575
+
+Confusion matrix:
+[[290661   4615]
+ [    70   1229]]
+
+Saved model: fraud_pipe_lgbm.joblib
+
+Training LightGBM model...
+Optimal threshold (F2): 0.9202093874192488
+
+=== Dynamic Threshold Optimization (F₂-Optimized Threshold) ===
+--- LightGBM performance ---
+ROC AUC: 0.9950202876955526
+Precision: 0.6094955489614243
+Recall: 0.7906081601231717
+F1: 0.688337801608579
+Classification report:
+              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00    295276
+           1       0.61      0.79      0.69      1299
+
+    accuracy                           1.00    296575
+   macro avg       0.80      0.89      0.84    296575
+weighted avg       1.00      1.00      1.00    296575
+
+Confusion matrix:
+[[294618    658]
+ [   272   1027]]
+
+Saved model: fraud_pipe_lgbm.joblib
+
+Training LightGBM model...
+Optimal threshold (F2): 0.48087606792518967
+
+=== After adding velocity + geo-movement behavioral features ===
+--- LightGBM performance ---
+ROC AUC: 0.998413522240973
+Precision: 0.745361484325016
+Recall: 0.8968437259430331
+F1: 0.8141160027952481
+Classification report:
+              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00    295276
+           1       0.75      0.90      0.81      1299
+
+    accuracy                           1.00    296575
+   macro avg       0.87      0.95      0.91    296575
+weighted avg       1.00      1.00      1.00    296575
+
+Confusion matrix:
+[[294878    398]
+ [   134   1165]]
+
+Saved model: fraud_pipe_lgbm.joblib

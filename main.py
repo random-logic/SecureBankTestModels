@@ -10,7 +10,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OrdinalEncoder
 from sklearn.impute import SimpleImputer
-from sklearn.ensemble import RandomForestClassifier
+from lightgbm import LGBMClassifier
 from sklearn.metrics import (
     roc_auc_score, precision_score, recall_score,
     f1_score, classification_report, confusion_matrix
@@ -102,6 +102,60 @@ def preprocess(df):
         df['amt_dev'] = df['amt'] - df['user_median_amt']
         numeric_feats.append('amt_dev')
 
+        # === Velocity & Geo Movement Features (Safe Version) ===
+        # requires sorting
+        df = df.sort_values(['cc_num', 'txn_dt'])
+
+        # previous coordinates
+        df['prev_lat'] = df.groupby('cc_num')['merch_lat'].shift(1)
+        df['prev_lon'] = df.groupby('cc_num')['merch_long'].shift(1)
+        df['prev_dt']  = df.groupby('cc_num')['txn_dt'].shift(1)
+
+        # haversine distance
+        def haversine(lat1, lon1, lat2, lon2):
+            R = 6371
+            lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = np.sin(dlat/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dlon/2)**2
+            return 2 * R * np.arcsin(np.sqrt(a))
+
+        df['dist_km'] = haversine(
+            df['prev_lat'], df['prev_lon'],
+            df['merch_lat'], df['merch_long']
+        )
+
+        # time difference in hours
+        df['time_diff_hours'] = (df['txn_dt'] - df['prev_dt']).dt.total_seconds() / 3600
+        df['time_diff_hours'] = df['time_diff_hours'].replace(0, np.nan)
+
+        # speed km/h
+        df['speed_kmh'] = df['dist_km'] / df['time_diff_hours']
+        df['speed_kmh'] = df['speed_kmh'].clip(lower=0, upper=2000)
+        df['speed_kmh'] = df['speed_kmh'].astype(float).fillna(0.0)
+        numeric_feats.append('speed_kmh')
+
+        # === SAFE In-Place 24h Rolling Windows ===
+        df['txn_24h_count'] = 0.0
+        df['amt_24h_mean'] = df['amt']
+
+        for cc, sub in df.groupby('cc_num'):
+            s = sub.set_index('txn_dt')
+
+            cnt = s['amt'].rolling('24h').count()
+            mean_amt = s['amt'].rolling('24h').mean()
+
+            df.loc[sub.index, 'txn_24h_count'] = cnt.values
+            df.loc[sub.index, 'amt_24h_mean'] = mean_amt.values
+
+        df['txn_24h_count'] = df['txn_24h_count'].fillna(0)
+        df['amt_24h_mean'] = df['amt_24h_mean'].fillna(df['amt'])
+
+        numeric_feats.append('txn_24h_count')
+        numeric_feats.append('amt_24h_mean')
+
+        df = df.sort_index()
+
     # Categorical features
     cat_feats = []
     for c in ['merchant','category']:
@@ -158,42 +212,36 @@ def main(csv_path='securebank.csv', random_state=42):
         ('cat', categorical_transformer, cat_feats)
     ], remainder='drop', verbose_feature_names_out=False)
 
-    # Model: Random Forest
-    pipe_rf = Pipeline([
+    # Model: LightGBM
+    pipe_lgbm = Pipeline([
         ('pre', preprocessor),
-        ('clf', RandomForestClassifier(n_estimators=200, class_weight='balanced', n_jobs=-1, random_state=random_state))
+        ('clf', LGBMClassifier(boosting_type='gbdt', num_leaves=64, learning_rate=0.05, n_estimators=400, class_weight='balanced'))
     ])
 
-    log.info("\nTraining Random Forest with Hard Negative Mining...")
-    pipe_rf.fit(X_train, y_train)
+    log.info("\nTraining LightGBM model...")
+    pipe_lgbm.fit(X_train, y_train)
 
-    for i in range(3):  # three rounds of mining
-        y_pred_iter = pipe_rf.predict(X_train) # this is for using predicted class
-        y_score_iter = pipe_rf.predict_proba(X_train)[:,1] # this is for using probability
-        hard_negatives = ( (y_train == 1) & (y_score_iter < 0.4) )  # harder fraud cases near decision boundary
-        if hard_negatives.sum() == 0:
-            break
-        X_train_iter = pd.concat([X_train, X_train[hard_negatives]], ignore_index=True)
-        y_train_iter = pd.concat([y_train, y_train[hard_negatives]], ignore_index=True)
-        pipe_rf.fit(X_train_iter, y_train_iter)
-        log.info(f"Iteration {i+1}: Re-trained with {hard_negatives.sum()} hard negatives")
+    y_score_lgbm = pipe_lgbm.predict_proba(X_test)[:,1]
+    from sklearn.metrics import precision_recall_curve
+    prec, rec, thresh = precision_recall_curve(y_test, y_score_lgbm)
+    beta = 2
+    f2 = (1+beta**2) * (prec*rec) / (beta**2 * prec + rec + 1e-9)
+    best_idx = f2[:-1].argmax()
+    optimal_threshold = thresh[best_idx]
+    y_pred_lgbm = (y_score_lgbm > optimal_threshold).astype(int)
+    log.info(f"Optimal threshold (F2): {optimal_threshold}")
 
-    y_score_rf = pipe_rf.predict_proba(X_test)[:,1]
-    threshold = 0.3
-    y_pred_rf = (y_score_rf > threshold).astype(int)
-    log.info(f"Applied probability threshold: {threshold}")
-
-    log.info("\n--- Random Forest performance ---")
-    log.info("ROC AUC: %s", roc_auc_score(y_test, y_score_rf))
-    log.info("Precision: %s", precision_score(y_test, y_pred_rf, zero_division=0))
-    log.info("Recall: %s", recall_score(y_test, y_pred_rf, zero_division=0))
-    log.info("F1: %s", f1_score(y_test, y_pred_rf, zero_division=0))
-    log.info("Classification report:\n%s", classification_report(y_test, y_pred_rf, zero_division=0))
-    log.info("Confusion matrix:\n%s", confusion_matrix(y_test, y_pred_rf))
+    log.info("\n--- LightGBM performance ---")
+    log.info("ROC AUC: %s", roc_auc_score(y_test, y_score_lgbm))
+    log.info("Precision: %s", precision_score(y_test, y_pred_lgbm, zero_division=0))
+    log.info("Recall: %s", recall_score(y_test, y_pred_lgbm, zero_division=0))
+    log.info("F1: %s", f1_score(y_test, y_pred_lgbm, zero_division=0))
+    log.info("Classification report:\n%s", classification_report(y_test, y_pred_lgbm, zero_division=0))
+    log.info("Confusion matrix:\n%s", confusion_matrix(y_test, y_pred_lgbm))
 
     # Save pipeline
-    joblib.dump(pipe_rf, "fraud_pipe_rf.joblib")
-    log.info("\nSaved model: fraud_pipe_rf.joblib")
+    joblib.dump(pipe_lgbm, "fraud_pipe_lgbm.joblib")
+    log.info("\nSaved model: fraud_pipe_lgbm.joblib")
 
 
 if __name__ == "__main__":
