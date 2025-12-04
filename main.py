@@ -21,7 +21,7 @@ import logging
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-file_handler = logging.FileHandler("results.txt")
+file_handler = logging.FileHandler("output.txt")
 file_handler.setLevel(logging.INFO)
 
 console_handler = logging.StreamHandler()
