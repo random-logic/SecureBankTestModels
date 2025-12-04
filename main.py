@@ -5,12 +5,11 @@ from pathlib import Path
 from datetime import datetime
 import joblib
 
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OrdinalEncoder
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     roc_auc_score, precision_score, recall_score,
@@ -24,7 +23,7 @@ def load_data(path):
 
 def safe_parse_datetime(series):
     # parse a variety of date strings to datetime, coerce errors
-    return pd.to_datetime(series, errors='coerce', infer_datetime_format=True)
+    return pd.to_datetime(series, errors='coerce')
 
 def preprocess(df):
     # Make a copy
@@ -162,28 +161,7 @@ def main(csv_path='securebank.csv', random_state=42):
         ('cat', categorical_transformer, cat_feats)
     ], remainder='drop', verbose_feature_names_out=False)
 
-    # Model 1: Logistic Regression baseline
-    pipe_lr = Pipeline([
-        ('pre', preprocessor),
-        ('clf', LogisticRegression(max_iter=2000, class_weight='balanced', solver='saga'))
-    ])
-
-    # Fit baseline
-    print("Training Logistic Regression baseline...")
-    pipe_lr.fit(X_train, y_train)
-    y_pred_lr = pipe_lr.predict(X_test)
-    y_score_lr = pipe_lr.predict_proba(X_test)[:,1]
-
-    # Evaluate
-    print("\n--- Logistic Regression performance ---")
-    print("ROC AUC:", roc_auc_score(y_test, y_score_lr))
-    print("Precision:", precision_score(y_test, y_pred_lr, zero_division=0))
-    print("Recall:", recall_score(y_test, y_pred_lr, zero_division=0))
-    print("F1:", f1_score(y_test, y_pred_lr, zero_division=0))
-    print("Classification report:\n", classification_report(y_test, y_pred_lr, zero_division=0))
-    print("Confusion matrix:\n", confusion_matrix(y_test, y_pred_lr))
-
-    # Model 2: Random Forest
+    # Model: Random Forest
     pipe_rf = Pipeline([
         ('pre', preprocessor),
         ('clf', RandomForestClassifier(n_estimators=200, class_weight='balanced', n_jobs=-1, random_state=random_state))
@@ -202,28 +180,9 @@ def main(csv_path='securebank.csv', random_state=42):
     print("Classification report:\n", classification_report(y_test, y_pred_rf, zero_division=0))
     print("Confusion matrix:\n", confusion_matrix(y_test, y_pred_rf))
 
-    # Save both pipelines
-    joblib.dump(pipe_lr, "fraud_pipe_logreg.joblib")
+    # Save pipeline
     joblib.dump(pipe_rf, "fraud_pipe_rf.joblib")
-    print("\nSaved models: fraud_pipe_logreg.joblib, fraud_pipe_rf.joblib")
-
-    # Optional: feature importance for Random Forest (after preprocessor)
-    # We can extract the column names after preprocessing
-    try:
-        pre = pipe_rf.named_steps['pre']
-        # numeric + engineered features
-        num_cols = numeric_feats + engineered_feats
-        # onehot feature names
-        ohe = pre.named_transformers_['cat'].named_steps['onehot']
-        # careful: OneHotEncoder sparse=False used above
-        ohe_cols = list(ohe.get_feature_names_out(cat_feats)) if hasattr(ohe, 'get_feature_names_out') else []
-        all_cols = num_cols + ohe_cols
-        rf = pipe_rf.named_steps['clf']
-        importances = pd.Series(rf.feature_importances_, index=all_cols).sort_values(ascending=False).head(30)
-        print("\nTop feature importances (Random Forest):")
-        print(importances)
-    except Exception as e:
-        print("Could not compute feature importances:", e)
+    print("\nSaved model: fraud_pipe_rf.joblib")
 
 
 if __name__ == "__main__":
