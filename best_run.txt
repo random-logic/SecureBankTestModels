@@ -1,0 +1,23 @@
+Training Random Forest with Hard Negative Mining...
+Applied probability threshold: 0.3
+
+--- Random Forest performance ---
+ROC AUC: 0.9852680178212149
+Precision: 0.8655139289145053
+Recall: 0.6936104695919938
+F1: 0.7700854700854701
+Classification report:
+              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00    295276
+           1       0.87      0.69      0.77      1299
+
+    accuracy                           1.00    296575
+   macro avg       0.93      0.85      0.88    296575
+weighted avg       1.00      1.00      1.00    296575
+
+Confusion matrix:
+[[295136    140]
+ [   398    901]]
+
+Saved model: fraud_pipe_rf.joblib

@@ -16,6 +16,24 @@ from sklearn.metrics import (
     f1_score, classification_report, confusion_matrix
 )
 
+import logging
+# logging.basicConfig(filename='model_output.log', level=logging.INFO, format='%(message)s')
+log = logging.getLogger()
+log.setLevel(logging.INFO)
+
+file_handler = logging.FileHandler("best_run.txt")
+file_handler.setLevel(logging.INFO)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(message)s')
+file_handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+log.addHandler(file_handler)
+log.addHandler(console_handler)
+
 # ---------- Helper functions ----------
 def load_data(path):
     df = pd.read_csv(path)
@@ -167,22 +185,36 @@ def main(csv_path='securebank.csv', random_state=42):
         ('clf', RandomForestClassifier(n_estimators=200, class_weight='balanced', n_jobs=-1, random_state=random_state))
     ])
 
-    print("\nTraining Random Forest...")
+    log.info("\nTraining Random Forest with Hard Negative Mining...")
     pipe_rf.fit(X_train, y_train)
-    y_pred_rf = pipe_rf.predict(X_test)
-    y_score_rf = pipe_rf.predict_proba(X_test)[:,1]
 
-    print("\n--- Random Forest performance ---")
-    print("ROC AUC:", roc_auc_score(y_test, y_score_rf))
-    print("Precision:", precision_score(y_test, y_pred_rf, zero_division=0))
-    print("Recall:", recall_score(y_test, y_pred_rf, zero_division=0))
-    print("F1:", f1_score(y_test, y_pred_rf, zero_division=0))
-    print("Classification report:\n", classification_report(y_test, y_pred_rf, zero_division=0))
-    print("Confusion matrix:\n", confusion_matrix(y_test, y_pred_rf))
+    for i in range(3):  # three rounds of mining
+        y_pred_iter = pipe_rf.predict(X_train)
+        y_score_iter = pipe_rf.predict_proba(X_train)[:,1]
+        hard_negatives = ( (y_train == 1) & (y_score_iter < 0.4) )  # harder fraud cases near decision boundary
+        if hard_negatives.sum() == 0:
+            break
+        X_train_iter = pd.concat([X_train, X_train[hard_negatives]], ignore_index=True)
+        y_train_iter = pd.concat([y_train, y_train[hard_negatives]], ignore_index=True)
+        pipe_rf.fit(X_train_iter, y_train_iter)
+        log.info(f"Iteration {i+1}: Re-trained with {hard_negatives.sum()} hard negatives")
+
+    y_score_rf = pipe_rf.predict_proba(X_test)[:,1]
+    threshold = 0.3
+    y_pred_rf = (y_score_rf > threshold).astype(int)
+    log.info(f"Applied probability threshold: {threshold}")
+
+    log.info("\n--- Random Forest performance ---")
+    log.info("ROC AUC: %s", roc_auc_score(y_test, y_score_rf))
+    log.info("Precision: %s", precision_score(y_test, y_pred_rf, zero_division=0))
+    log.info("Recall: %s", recall_score(y_test, y_pred_rf, zero_division=0))
+    log.info("F1: %s", f1_score(y_test, y_pred_rf, zero_division=0))
+    log.info("Classification report:\n%s", classification_report(y_test, y_pred_rf, zero_division=0))
+    log.info("Confusion matrix:\n%s", confusion_matrix(y_test, y_pred_rf))
 
     # Save pipeline
     joblib.dump(pipe_rf, "fraud_pipe_rf.joblib")
-    print("\nSaved model: fraud_pipe_rf.joblib")
+    log.info("\nSaved model: fraud_pipe_rf.joblib")
 
 
 if __name__ == "__main__":
