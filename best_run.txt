@@ -21,3 +21,28 @@ Confusion matrix:
  [   398    901]]
 
 Saved model: fraud_pipe_rf.joblib
+
+=== THIS IS THE BEST RUN ===
+Training Random Forest with Hard Negative Mining...
+Applied probability threshold: 0.3
+
+--- Random Forest performance ---
+ROC AUC: 0.9762034671472045
+Precision: 0.7736486486486487
+Recall: 0.7051578137028484
+F1: 0.7378171566653242
+Classification report:
+              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00    295276
+           1       0.77      0.71      0.74      1299
+
+    accuracy                           1.00    296575
+   macro avg       0.89      0.85      0.87    296575
+weighted avg       1.00      1.00      1.00    296575
+
+Confusion matrix:
+[[295008    268]
+ [   383    916]]
+
+Saved model: fraud_pipe_rf.joblib

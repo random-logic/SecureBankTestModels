@@ -21,7 +21,7 @@ import logging
 log = logging.getLogger()
 log.setLevel(logging.INFO)
 
-file_handler = logging.FileHandler("best_run.txt")
+file_handler = logging.FileHandler("results.txt")
 file_handler.setLevel(logging.INFO)
 
 console_handler = logging.StreamHandler()
@@ -54,9 +54,10 @@ def preprocess(df):
         # fallback: detect merchant names prefixed with 'fraud_'
         y = df['merchant'].astype(str).str.startswith('fraud').astype(int)
 
-    # Basic feature engineering
-    # 1) Convert unix_time to datetime if present
-    if 'unix_time' in df.columns:
+    # Compute transaction datetime from 'trans_date_trans_time' or 'unix_time'
+    if 'trans_date_trans_time' in df.columns:
+        df['txn_dt'] = safe_parse_datetime(df['trans_date_trans_time'])
+    elif 'unix_time' in df.columns:
         try:
             df['txn_dt'] = pd.to_datetime(df['unix_time'], unit='s', errors='coerce')
         except Exception:
@@ -64,81 +65,39 @@ def preprocess(df):
     else:
         df['txn_dt'] = pd.NaT
 
-    # 2) Parse DOB if present and compute age at transaction
-    if 'dob' in df.columns:
-        dob = safe_parse_datetime(df['dob'])
-        # If txn_dt is missing, try using year_date/month_date/day_date if available
-        if df['txn_dt'].isna().all():
-            # try to build txn_dt from day_date/month_date/year_date
-            if {'day_date','month_date','year_date'}.issubset(df.columns):
-                # month_date may be names like 'December' -> try parse with day=15 default
-                def make_txn(row):
-                    try:
-                        md = row['month_date']
-                        yr = int(row['year_date'])
-                        dy = int(row['day_date'])
-                        # if month given as name, parse
-                        try:
-                            m = datetime.strptime(md.strip(), "%B").month
-                        except Exception:
-                            try:
-                                m = int(md)
-                            except Exception:
-                                m = 1
-                        return datetime(yr, m, min(max(1, dy),28))
-                    except Exception:
-                        return pd.NaT
-                df['txn_dt'] = df.apply(make_txn, axis=1)
-        age = (df['txn_dt'] - dob).dt.days // 365
-        df['age'] = age.fillna(-1).astype(int)
-    else:
-        df['age'] = -1
-
-    # 3) Extract time features from txn_dt or fallback to hour/minute/seconds columns
-    if 'txn_dt' in df.columns and not df['txn_dt'].isna().all():
-        df['txn_hour']   = df['txn_dt'].dt.hour.fillna(-1).astype(int)
-        df['txn_weekday']= df['txn_dt'].dt.weekday.fillna(-1).astype(int)
-        df['txn_month']  = df['txn_dt'].dt.month.fillna(-1).astype(int)
-    else:
-        for c in ['hour','minute','seconds','day_of_week','month_date']:
-            if c in df.columns:
-                # coerce to numeric when possible, else -1
-                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(-1).astype(int)
-        # map day_of_week text to number
-        if 'day_of_week' in df.columns and df['day_of_week'].dtype == object:
-            dow_map = {'Monday':0,'Tuesday':1,'Wednesday':2,'Thursday':3,'Friday':4,'Saturday':5,'Sunday':6}
-            df['txn_weekday'] = df['day_of_week'].map(dow_map).fillna(-1).astype(int)
-        else:
-            df['txn_weekday'] = df.get('day_of_week', -1).astype(int)
-        df['txn_hour'] = df.get('hour', -1).astype(int)
-        df['txn_month'] = df.get('month_date', -1).astype(int)
-
-    # 4) Numeric features
+    # Numeric features
     numeric_feats = []
-    for c in ['amt', 'merch_lat', 'merch_long', 'lat', 'long', 'city_pop']:
+    for c in ['amt', 'merch_lat', 'merch_long']:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors='coerce')
             numeric_feats.append(c)
 
-    # 5) Categorical features (low-cardinality): merchant, category, city, state, job
+    # Add engineered time features
+    df['txn_hour'] = df['txn_dt'].dt.hour.fillna(-1).astype(int)
+    df['txn_weekday'] = df['txn_dt'].dt.weekday.fillna(-1).astype(int)
+    df['txn_month'] = df['txn_dt'].dt.month.fillna(-1).astype(int)
+    numeric_feats.extend(['txn_hour', 'txn_weekday', 'txn_month'])
+
+    # Add amount log feature
+    df['amt_log'] = np.log1p(df['amt'])
+    numeric_feats.append('amt_log')
+
+    # Categorical features
     cat_feats = []
-    for c in ['merchant','category','city','state','job']:
+    for c in ['merchant','category']:
         if c in df.columns:
-            # trim and fill
             df[c] = df[c].astype(str).str.strip().fillna('missing')
             cat_feats.append(c)
 
-    # 6) Drop obviously PII or identifiers that should not be used raw
-    drop_cols = []
-    for c in ['trans_num','cc_num','first','last','street','dob','unix_time','txn_dt','day_date','month_date','year_date']:
-        if c in df.columns:
-            drop_cols.append(c)
+    # Drop all other columns except the ones we keep and the label
+    keep_cols = set(numeric_feats + cat_feats + ['txn_dt'])
+    drop_cols = [c for c in df.columns if c not in keep_cols and c != 'is_fraud']
+    df.drop(columns=drop_cols, inplace=True, errors='ignore')
 
     # Final feature list
-    engineered_feats = ['age','txn_hour','txn_weekday','txn_month']
-    X = df[numeric_feats + cat_feats + engineered_feats].copy()
+    X = df[numeric_feats + cat_feats].copy()
 
-    return X, y, numeric_feats, cat_feats, engineered_feats
+    return X, y, numeric_feats, cat_feats, []
 
 # ---------- Main run ----------
 def main(csv_path='securebank.csv', random_state=42):
