@@ -82,6 +82,26 @@ def preprocess(df):
     df['amt_log'] = np.log1p(df['amt'])
     numeric_feats.append('amt_log')
 
+    # === Behavioral Features ===
+    # Transactions per user in rolling windows cannot be computed without grouping, skip now.
+    # But compute merchant/category novelty and spend deviation.
+
+    # Merchant novelty: first time using this merchant?
+    if 'merchant' in df.columns:
+        df['merchant_count'] = df.groupby('merchant').cumcount()
+        numeric_feats.append('merchant_count')
+
+    # Category usage frequency
+    if 'category' in df.columns:
+        df['category_count'] = df.groupby('category').cumcount()
+        numeric_feats.append('category_count')
+
+    # Amount deviation from user median using cc_num
+    if 'cc_num' in df.columns:
+        df['user_median_amt'] = df.groupby('cc_num')['amt'].transform('median')
+        df['amt_dev'] = df['amt'] - df['user_median_amt']
+        numeric_feats.append('amt_dev')
+
     # Categorical features
     cat_feats = []
     for c in ['merchant','category']:
@@ -148,8 +168,8 @@ def main(csv_path='securebank.csv', random_state=42):
     pipe_rf.fit(X_train, y_train)
 
     for i in range(3):  # three rounds of mining
-        y_pred_iter = pipe_rf.predict(X_train)
-        y_score_iter = pipe_rf.predict_proba(X_train)[:,1]
+        y_pred_iter = pipe_rf.predict(X_train) # this is for using predicted class
+        y_score_iter = pipe_rf.predict_proba(X_train)[:,1] # this is for using probability
         hard_negatives = ( (y_train == 1) & (y_score_iter < 0.4) )  # harder fraud cases near decision boundary
         if hard_negatives.sum() == 0:
             break

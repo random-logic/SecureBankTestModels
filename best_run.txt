@@ -22,7 +22,7 @@ Confusion matrix:
 
 Saved model: fraud_pipe_rf.joblib
 
-=== THIS IS THE BEST RUN ===
+=== AFTER REMOVING NOT NEEDED COLS AND KEEPING THE DATE FEATURES ===
 Training Random Forest with Hard Negative Mining...
 Applied probability threshold: 0.3
 
@@ -44,5 +44,30 @@ weighted avg       1.00      1.00      1.00    296575
 Confusion matrix:
 [[295008    268]
  [   383    916]]
+
+Saved model: fraud_pipe_rf.joblib
+
+=== ADDING BEHAVIORAL FEATURES ===
+Training Random Forest with Hard Negative Mining...
+Applied probability threshold: 0.3
+
+--- Random Forest performance ---
+ROC AUC: 0.9832337524357504
+Precision: 0.7991228070175439
+Recall: 0.7013086989992302
+F1: 0.7470274702747027
+Classification report:
+              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00    295276
+           1       0.80      0.70      0.75      1299
+
+    accuracy                           1.00    296575
+   macro avg       0.90      0.85      0.87    296575
+weighted avg       1.00      1.00      1.00    296575
+
+Confusion matrix:
+[[295047    229]
+ [   388    911]]
 
 Saved model: fraud_pipe_rf.joblib
